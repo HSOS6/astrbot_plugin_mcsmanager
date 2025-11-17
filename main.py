@@ -2,6 +2,8 @@ import asyncio
 import time
 from typing import Dict, List, Optional
 import httpx
+# 【新增】需要导入 json 库来格式化输出
+import json 
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -22,7 +24,7 @@ class InstanceCooldownManager:
         self.cooldowns[instance_id] = time.time()
 
 # @register(插件名, 作者, 描述, 版本, 仓库地址)
-@register("MCSManager", "5060的3600马力", "MCSManager服务器管理插件(v10最终适配版)", "1.0.7")
+@register("MCSManager", "5060的3600马力", "MCSManager服务器管理插件(v10)", "1.1.8")
 class MCSMPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -38,7 +40,7 @@ class MCSMPlugin(Star):
         logger.info("MCSM插件已卸载")
 
     async def make_mcsm_request(self, endpoint: str, method: str = "GET", params: dict = None, data: dict = None) -> dict:
-        """发送请求到MCSManager API"""
+        """发送请求到 MCSManager API"""
         base_url = self.config['mcsm_url'].rstrip('/')
         
         # 确保 API 路径以 /api 开头
@@ -47,9 +49,10 @@ class MCSMPlugin(Star):
         else:
             url = f"{base_url}{endpoint}"
         
-        # V10 API Key 必须放在 Query 参数中
+        # V10 API Key 必须放在 Query 参数中 (params)
         query_params = {"apikey": self.config["api_key"]}
         if params:
+            # 合并用户提供的查询参数（例如 uuid, daemonId）
             query_params.update(params)
 
         headers = {
@@ -59,12 +62,14 @@ class MCSMPlugin(Star):
 
         try:
             if method.upper() == "GET":
+                # GET 请求：参数全部在 URL Query 中
                 response = await self.http_client.get(url, params=query_params, headers=headers)
             elif method.upper() == "POST":
+                # POST 请求：将 API key 和 URL 参数放在 URL (query_params)，将数据放在 Body (json=data)
                 response = await self.http_client.post(url, params=query_params, json=data, headers=headers)
             elif method.upper() == "PUT":
                 response = await self.http_client.put(url, params=query_params, json=data, headers=headers)
-            elif method.upper() == "DELETE":
+            elif method.upper == "DELETE":
                 response = await self.http_client.delete(url, params=query_params, json=data, headers=headers)
             else:
                 return {"status": 400, "error": "不支持的请求方法"}
@@ -117,6 +122,34 @@ class MCSMPlugin(Star):
 """
         yield event.plain_result(help_text)
 
+    # 【新增命令】用于调试，返回完整的概览数据 JSON
+    @filter.command("mcsm-debug")
+    async def mcsm_debug(self, event: AstrMessageEvent):
+        """返回概览数据的完整原始 JSON 内容"""
+        if not self.is_admin_or_authorized(event):
+            yield event.plain_result("❌ 权限不足")
+            return
+
+        yield event.plain_result("正在获取概览原始数据，请稍候...")
+        
+        overview_resp = await self.make_mcsm_request("/overview")
+        
+        # 使用 json.dumps 格式化输出，方便阅读
+        try:
+            debug_output = json.dumps(overview_resp, indent=2, ensure_ascii=False)
+        except Exception as e:
+            # 兼容性处理，如果 json.dumps 失败，则直接转字符串
+            debug_output = f"JSON格式化失败: {str(e)}\n原始数据: {str(overview_resp)}"
+
+        result_text = f"⚙️ MCSM 概览原始数据:\n{debug_output}"
+        
+        # 防止数据过长导致消息发送失败，进行截断
+        if len(result_text) > 2000:
+            result_text = result_text[:2000] + "\n... [数据过长，已截断。请查看 AstrBot 插件日志获取完整信息]"
+
+        yield event.plain_result(result_text)
+
+
     @filter.command("mcsm-auth", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_auth(self, event: AstrMessageEvent, user_id: str):
         """授权用户"""
@@ -146,7 +179,7 @@ class MCSMPlugin(Star):
 
     @filter.command("mcsm-list")
     async def mcsm_list(self, event: AstrMessageEvent):
-        """查看实例列表 (修正 page_size)"""
+        """查看实例列 (修正 page_size)"""
         if not self.is_admin_or_authorized(event):
             yield event.plain_result("❌ 权限不足")
             return
@@ -197,9 +230,10 @@ class MCSMPlugin(Star):
                 result += f"\n📭 节点 {node_name} (ID: {node_uuid}): 无实例\n"
                 continue
 
+            # 精简输出格式
             result += f"\n 节点: {node_name}\n"
             for instance in instances:
-                # v10 状态码: -1:未知, 0:停止, 1:停止中, 2:启动中, 3:运行中
+                # 状态码: -1:未知, 0:停止, 1:停止中, 2:启动中, 3:运行中
                 status_code = instance.get("status")
                 if status_code is None and "info" in instance:
                     status_code = instance["info"].get("status")
@@ -225,16 +259,17 @@ class MCSMPlugin(Star):
             yield event.plain_result("⏳ 操作太快了，请稍后再试")
             return
 
-        # v10: GET /instance/open?uuid=...&daemonId=...
+        # 【文档修正】
         start_resp = await self.make_mcsm_request(
-            "/instance/open",
+            "/protected_instance/open", 
             method="GET", 
-            params={"uuid": instance_id, "daemonId": daemon_id}
+            params={"uuid": instance_id, "daemonId": daemon_id} 
         )
         
         if start_resp.get("status") != 200:
             err = start_resp.get("data") or start_resp.get("error") or "未知错误"
-            yield event.plain_result(f"❌ 启动失败: {err}")
+            status_code = start_resp.get("status", "???")
+            yield event.plain_result(f"❌ 启动失败: [{status_code}] {err}")
             return
 
         self.cooldown_manager.set_cooldown(instance_id)
@@ -247,16 +282,21 @@ class MCSMPlugin(Star):
             yield event.plain_result("❌ 权限不足")
             return
 
-        # v10: GET /instance/stop?uuid=...&daemonId=...
+        if self.cooldown_manager.check_cooldown(instance_id):
+            yield event.plain_result("⏳ 操作太快了，请稍后再试")
+            return
+
+        # 【文档修正】
         stop_resp = await self.make_mcsm_request(
-            "/instance/stop",
+            "/protected_instance/stop",
             method="GET",
             params={"uuid": instance_id, "daemonId": daemon_id}
         )
 
         if stop_resp.get("status") != 200:
             err = stop_resp.get("data") or stop_resp.get("error") or "未知错误"
-            yield event.plain_result(f"❌ 停止失败: {err}")
+            status_code = stop_resp.get("status", "???")
+            yield event.plain_result(f"❌ 停止失败: [{status_code}] {err}")
             return
 
         self.cooldown_manager.set_cooldown(instance_id)
@@ -269,9 +309,9 @@ class MCSMPlugin(Star):
             yield event.plain_result("❌ 权限不足")
             return
 
-        # v10: GET /instance/command?uuid=...&daemonId=...&command=...
+        # v10 文档: GET /api/protected_instance/command
         cmd_resp = await self.make_mcsm_request(
-            "/instance/command",
+            "/protected_instance/command", # 修正路径，使用 protected_instance
             method="GET",
             params={
                 "uuid": instance_id,
@@ -288,9 +328,9 @@ class MCSMPlugin(Star):
         # 等待一小会儿获取日志
         await asyncio.sleep(1)
 
-        # v10: GET /instance/outputlog
+        # v10 文档: GET /api/protected_instance/outputlog
         output_resp = await self.make_mcsm_request(
-            "/instance/outputlog",
+            "/protected_instance/outputlog", # 修正路径，使用 protected_instance
             method="GET",
             params={"uuid": instance_id, "daemonId": daemon_id}
         )
@@ -307,90 +347,89 @@ class MCSMPlugin(Star):
 
     @filter.command("mcsm-status")
     async def mcsm_status(self, event: AstrMessageEvent):
-        """查看面板状态 (精简显示 CPU/内存百分比)"""
+        """查看面板状态"""
         if not self.is_admin_or_authorized(event):
             yield event.plain_result("❌ 权限不足")
             return
 
+        # 辅助函数：将字节数转换为 GB，保留两位小数
+        def format_memory_gb(bytes_value):
+            if not isinstance(bytes_value, (int, float)) or bytes_value <= 0:
+                return "0.00 GB"
+            gb = bytes_value / (1024 * 1024 * 1024)
+            return f"{gb:.2f} GB"
+        
         overview_resp = await self.make_mcsm_request("/overview")
         if overview_resp.get("status") != 200:
-            # 捕获并显示详细错误信息
             err_msg = overview_resp.get('error', '未知连接错误，请检查配置')
             yield event.plain_result(f"❌ 获取状态失败: {err_msg}")
             return
 
         data = overview_resp.get("data", {})
-        
-        # Helper: 将秒数格式化为易读的运行时间
-        def format_uptime(seconds):
-            if not isinstance(seconds, (int, float)):
-                return "未知"
-            days = int(seconds // (3600 * 24))
-            hours = int((seconds % (3600 * 24)) // 3600)
-            minutes = int((seconds % 3600) // 60)
-            if days > 0:
-                return f"{days}天{hours}时"
-            return f"{hours}时{minutes}分"
             
         # 1. 节点总览信息
         r_count = data.get("remoteCount", {})
         r_avail = r_count.get('available', 0) if isinstance(r_count, dict) else r_count
-        r_total = r_count.get('total', 0) if isinstance(r_count, dict) else r_count
+        r_total = r_count.get('total', 0) if isinstance(r_count, dict) else r_total
 
         total_instances = 0
         running_instances = 0
         
-        # 2. 面板进程 CPU/内存/版本/运行时间
         mcsm_version = data.get("version", "未知版本")
-        web_process = data.get("process", {})
-        web_cpu = f"{web_process.get('cpu', 0):.2f}%"
-        web_mem_bytes = web_process.get('memory', 0)
-        web_mem_mb = f"{(web_mem_bytes / (1024 * 1024)):.2f}MB"
-        web_uptime = format_uptime(web_process.get("uptime"))
 
         status_text = (
-            f"📊 MCSM v{mcsm_version} 状态:\n"
-            "---------------------\n"
-            f"面板进程 (Web)\n"
-            f"-运行时间: {web_uptime}\n"
-            f"-CPU: {web_cpu}\n"
-            f"-内存: {web_mem_mb}\n"
+            f"📊 MCSM v{mcsm_version} 状态概览:\n"
             "----------------------\n"
         )
         
-        # 3. 节点系统信息
+        # 2. 节点系统信息
         if "remote" in data:
             for i, node in enumerate(data["remote"]):
+                node_sys = node.get("system", {})
                 inst_info = node.get("instance", {})
+                
+                # 累加总实例数
                 total_instances += inst_info.get("total", 0)
                 running_instances += inst_info.get("running", 0)
 
-                # 提取节点系统信息
-                node_sys = node.get("system", {})
+                # 提取请求的数据点
                 node_name = node.get("remarks") or node.get("hostname") or f"Unnamed Node ({i+1})"
+                node_version = node.get("version", "未知")
                 
-                # 提取并格式化指标
-                node_cpu = f"{(node_sys.get('cpuUsage', 0) * 100):.2f}%" 
-                # 内存只显示百分比
-                node_mem_used_percent = f"{(node_sys.get('memUsage', 0) * 100):.2f}%" 
+                # OS 版本: 优先使用 system.version，其次 system.release
+                os_version = node_sys.get("version") or node_sys.get("release") or "未知"
                 
-                # 磁盘信息 (只显示百分比,但是坏的？)
-                disk_usage_percent = f"{(node_sys.get('diskUsage', 0) * 100):.2f}%"
-                node_uptime = format_uptime(node_sys.get("uptime"))
+                # CPU: ratio (0.0 - 1.0) -> percentage
+                node_cpu_percent = f"{(node_sys.get('cpuUsage', 0) * 100):.2f}%" 
+                
+                # 内存: 计算已用内存 (GB)
+                mem_total_bytes = node_sys.get("totalmem", 0)
+                mem_usage_ratio = node_sys.get("memUsage", 0)
+                mem_used_bytes = mem_total_bytes * mem_usage_ratio
+                
+                mem_used_formatted = format_memory_gb(mem_used_bytes)
+                mem_total_formatted = format_memory_gb(mem_total_bytes)
+                
+                # Instance Counts
+                inst_running = inst_info.get("running", 0)
+                inst_total = inst_info.get("total", 0)
 
+                # 组装节点信息块
                 status_text += (
-                    f"节点: {node_name}\n"
-                    f"运行时间: {node_uptime}\n"
-                    f"CPU: {node_cpu}\n"
-                    f"内存: {node_mem_used_percent}\n"
+                    f"🖥️ 节点: {node_name}\n"
+                    f"- 状态: {'🟢 在线' if node.get('available') else '🔴 离线'}\n"
+                    f"- 节点版本: {node_version}\n"
+                    f"- OS 版本: {os_version}\n"
+                    f"- CPU 占用: {node_cpu_percent}\n"
+                    f"- 内存占用: {mem_used_formatted} / {mem_total_formatted}\n"
+                    f"- 实例数量: {inst_running} 运行中 / {inst_total} 总数\n"
+                    "----------------------\n"
                 )
 
-        # 4. 实例总数信息
+        # 3. 总结信息
         status_text += (
-            "----------------------\n"
-            f"💻 节点状态: {r_avail}/{r_total}\n"
-            f"📦 实例总数: {total_instances}\n"
-            f"▶️ 运行中: {running_instances}\n"
+            f"总节点状态: {r_avail} 在线 / {r_total} 总数\n"
+            f"总实例运行中: {running_instances} / {total_instances}\n"
             f"提示: 使用 /mcsm-list 查看详情"
         )
 
