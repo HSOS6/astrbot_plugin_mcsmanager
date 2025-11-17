@@ -52,3 +52,4 @@ APIkey需要从
 - [AstrBot 官方文档](https://astrbot.app)
 - [AstrBot GitHub](https://github.com/Soulter/AstrBot)
 - [基于xinghanxu_astrbot_for_mcsmanager制作](https://github.com/xinghanxu666/xinghanxu_astrbot_for_mcsmanager)
+- [MCSManager](https://docs.mcsmanager.com/)
