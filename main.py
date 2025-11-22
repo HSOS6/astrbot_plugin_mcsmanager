@@ -1,8 +1,9 @@
 import asyncio
 import time
-from typing import Dict
+from typing import Dict, Any
 import httpx
 import json 
+import datetime # 引入 datetime 库用于格式化时间戳
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -21,7 +22,35 @@ class InstanceCooldownManager:
         """设置实例冷却时间"""
         self.cooldowns[instance_id] = time.time()
 
-@register("MCSManager", "5060的3600马力", "MCSManager服务器管理插件(v10最终适配版)", "1.1.10")
+def format_uptime_seconds(seconds: float) -> str:
+    """将秒数转换为 天/小时/分钟 的可读格式"""
+    if seconds is None or seconds <= 0:
+        return "未知"
+    seconds = int(seconds)
+    # 1. 转换为分钟和剩余秒数
+    minutes, seconds = divmod(seconds, 60)
+    # 2. 转换为小时和剩余分钟
+    hours, minutes = divmod(minutes, 60)
+    # 3. 转换为天和剩余小时
+    days, hours = divmod(hours, 24)
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days}天")
+    if hours > 0:
+        parts.append(f"{hours}小时")
+    if minutes > 0:
+        parts.append(f"{minutes}分钟")
+    
+    # 如果不足一分钟，则显示秒
+    if not parts:
+        return f"{seconds}秒"
+    
+    # 限制只显示最长的两个单位，避免结果太长
+    return "".join(parts[:2]) if len(parts) > 1 else "".join(parts)
+
+
+@register("MCSManager", "5060的3600马力", "MCSManager服务器管理插件Beta", "1.1.18.beta")
 class MCSMPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -98,40 +127,15 @@ class MCSMPlugin(Star):
             
         help_text = """
 🛠️ MCSM v10 管理面板：
-/mcsm-status - 面板状态概览
+/mcsm-status - 面板状态概览 (现在仅显示服务器/OS的真实运行时间)
 /mcsm-list - 节点实例列表
 /mcsm-start [daemonId] [uuid] - 启动实例
 /mcsm-stop [daemonId] [uuid] - 停止实例
 /mcsm-cmd [daemonId] [uuid] [command] - 发送命令
 /mcsm-auth [user_id] - 授权用户
 /mcsm-unauth [user_id] - 取消授权
-/mcsm-debug - 返回原始概览数据 (调试用)
 """
         yield event.plain_result(help_text)
-
-    @filter.command("mcsm-debug")
-    async def mcsm_debug(self, event: AstrMessageEvent):
-        """返回概览数据的完整原始 JSON 内容 (调试用)"""
-        if not self.is_admin_or_authorized(event):
-            yield event.plain_result("❌ 权限不足")
-            return
-
-        yield event.plain_result("正在获取概览原始数据，请稍候...")
-        
-        overview_resp = await self.make_mcsm_request("/overview")
-        
-        try:
-            debug_output = json.dumps(overview_resp, indent=2, ensure_ascii=False)
-        except Exception as e:
-            debug_output = f"JSON格式化失败: {str(e)}\n原始数据: {str(overview_resp)}"
-
-        result_text = f"⚙️ MCSM 概览原始数据:\n{debug_output}"
-        
-        if len(result_text) > 2000:
-            result_text = result_text[:2000] + "\n... [数据过长，已截断]"
-
-        yield event.plain_result(result_text)
-
 
     @filter.command("mcsm-auth", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_auth(self, event: AstrMessageEvent, user_id: str):
@@ -186,6 +190,7 @@ class MCSMPlugin(Star):
             node_uuid = node.get("uuid")
             node_name = node.get("remarks") or node.get("ip") or "Unnamed Node"
             
+            # 兼容 v10 API，查询指定节点下的实例
             instances_resp = await self.make_mcsm_request(
                 "/service/remote_service_instances",
                 params={"daemonId": node_uuid, "page": 1, "page_size": 50}
@@ -202,7 +207,7 @@ class MCSMPlugin(Star):
                 continue
 
             data_block = instances_resp.get("data", {})
-            # API 返回的 data 字段结构不一致，需要做兼容处理。
+            # 兼容 API 返回数据结构不一致的情况
             instances = data_block.get("data", []) if isinstance(data_block, dict) else data_block
 
             if not instances:
@@ -300,7 +305,6 @@ class MCSMPlugin(Star):
             yield event.plain_result(f"❌ 发送失败: {err}")
             return
 
-        # 由于 MCSM API 没有提供命令执行后的可靠通知机制，我们只能盲目等待1秒来尝试获取日志。
         await asyncio.sleep(1) 
 
         output_resp = await self.make_mcsm_request(
@@ -338,18 +342,36 @@ class MCSMPlugin(Star):
             return
 
         data = overview_resp.get("data", {})
-            
+        
         r_count = data.get("remoteCount", {})
-        r_avail = r_count.get('available', 0) if isinstance(r_count, dict) else r_count
+        r_avail = r_count.get('available', 0) if isinstance(r_count, dict) else r_avail
         r_total = r_count.get('total', 0) if isinstance(r_count, dict) else r_total
 
         total_instances = 0
         running_instances = 0
         
         mcsm_version = data.get("version", "未知版本")
+        
+        # --- 1. 提取并格式化根层级的 time 字段 (数据时间点) ---
+        panel_timestamp_ms = overview_resp.get("time")
+        panel_time_formatted = "未知时间"
+        if panel_timestamp_ms and isinstance(panel_timestamp_ms, (int, float)):
+            try:
+                # 将毫秒转换为秒，并格式化为可读的日期时间
+                dt_object = datetime.datetime.fromtimestamp(panel_timestamp_ms / 1000.0)
+                panel_time_formatted = dt_object.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                panel_time_formatted = "时间戳错误"
+
+        os_system_uptime = data.get("system", {}).get("uptime")
+        os_uptime_formatted = format_uptime_seconds(os_system_uptime)
+        
+        logger.info(f"OS/Server raw uptime (from panel system): {os_system_uptime} seconds")
+
 
         status_text = (
             f"📊 MCSM v{mcsm_version} 状态概览:\n"
+            f"  - 数据时间: {panel_time_formatted}\n"
             "----------------------\n"
         )
         
@@ -366,8 +388,10 @@ class MCSMPlugin(Star):
                 
                 os_version = node_sys.get("version") or node_sys.get("release") or "未知"
                 
+                # CPU 占用
                 node_cpu_percent = f"{(node_sys.get('cpuUsage', 0) * 100):.2f}%" 
                 
+                # 内存占用
                 mem_total_bytes = node_sys.get("totalmem", 0)
                 mem_usage_ratio = node_sys.get("memUsage", 0)
                 mem_used_bytes = mem_total_bytes * mem_usage_ratio
@@ -377,6 +401,7 @@ class MCSMPlugin(Star):
                 
                 inst_running = inst_info.get("running", 0)
                 inst_total = inst_info.get("total", 0)
+
 
                 status_text += (
                     f"🖥️ 节点: {node_name}\n"
@@ -390,6 +415,7 @@ class MCSMPlugin(Star):
                 )
 
         status_text += (
+            f"- 在线时间: {os_uptime_formatted}\n" # <-- 面板时间（）
             f"总节点状态: {r_avail} 在线 / {r_total} 总数\n"
             f"总实例运行中: {running_instances} / {total_instances}\n"
             f"提示: 使用 /mcsm-list 查看详情"
