@@ -6,17 +6,17 @@ _✨ AstrBot 一个可以管理mcsm的小插件 ✨_
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-3.4%2B-orange.svg)](https://github.com/Soulter/AstrBot)
-[![MCSM](https://img.shields.io/badge/MCSM-9.7.0-blue.svg)](https://github.com/MCSManager/MCSManager)
+[![MCSM](https://img.shields.io/badge/MCSM-10%2B-blue.svg)](https://github.com/MCSManager/MCSManager)
 
 </div>
 
 ## 介绍
 主要功能:
 - 通过指令开/关mcsm实例
+- 通过指令操作实例
 - mcsm节点状态（内存，cpu占用）
 - 查看实例列表
 
-> 当前问题：cmd指令有问题
 ## 📦 安装
 ### 方式一：从插件市场安装
 你可以通过搜索关键词：mcsm 找到本插件
@@ -42,12 +42,12 @@ APIkey需要从
 
 ### 指令介绍
 - 显示帮助信息 mcsm-help
-- 授权用户 mcsm-auth
-- 取消用户授权 mcsm-unauth
-- 查看实例列表 mcsm-list
-- 启动实例 mcsm-start
-- 停止实例 mcsm-stop
-- 发送命令 mcsm-cmd
+- 授权用户 mcsm op
+- 取消用户授权 mcsm deop
+- 查看实例列表 mcsm list
+- 启动实例 mcsm start
+- 停止实例 mcsm stop
+- 发送命令 mcsm cmd
 - 查看面板状态 (精简显示 CPU/内存)		mcsm-status
 
 ## 🔗 相关链接
