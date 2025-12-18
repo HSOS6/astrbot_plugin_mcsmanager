@@ -10,12 +10,12 @@ _✨ AstrBot 一个可以管理mcsm的小插件 ✨_
 
 </div>
 
-> 您的支持是我的最大动力，点个star不迷路！
+> 您的支持是我的最大动力，点个star不迷路！有问题欢迎提issue！
 
 ## 介绍
 主要功能:
-- 通过指令开/关mcsm实例
-- 通过指令操作实例
+- 通过指令开/关实例
+- 通过mcsm cmd指令操作实例
 - mcsm节点状态（内存，cpu占用）
 - 查看实例列表
 
@@ -58,3 +58,8 @@ APIkey需要从
 - [AstrBot GitHub](https://github.com/Soulter/AstrBot)
 - [基于xinghanxu_astrbot_for_mcsmanager制作](https://github.com/xinghanxu666/xinghanxu_astrbot_for_mcsmanager)
 - [MCSManager](https://docs.mcsmanager.com/)
+
+## 更新日志
+12.18：修复cmd命令空格不识别问题
+如/mcsm cmd id text1 text2只发送text1
+12.15：修复了大部分问题，修改授权指令
