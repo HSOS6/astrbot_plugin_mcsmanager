@@ -38,7 +38,7 @@ git clone https://github.com/HSOS6/astrbot_plugin_mcsmanager.git
 
 ## 使用说明
 ### 注意：插件重启/重载后首次使用实例命令时会自动拉取实例列表（也可手动 mcsm list 刷新编号）喵
-本插件仅适用于[![MCSM](https://img.shields.io/badge/MCSM-10%2B-blue.svg)](https://github.com/MCSManager/MCSManager)
+本插件仅适用于MCSMv10以上版本
 ### 插件配置：
 <img width="1866" height="893" alt="image" src="https://github.com/user-attachments/assets/a79bdc26-c081-4994-9d62-5656d6493cce" />
 所有可选框均为必填配置！
