@@ -4,9 +4,7 @@
 
 _✨ AstrBot 一个可以管理mcsm的小插件 ✨_
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![AstrBot](https://img.shields.io/badge/AstrBot-3.4%2B-orange.svg)](https://github.com/Soulter/AstrBot)
-[![MCSM](https://img.shields.io/badge/MCSM-10%2B-blue.svg)](https://github.com/MCSManager/MCSManager)
+适用于MCSM v10以上版本
 
 </div>
 
