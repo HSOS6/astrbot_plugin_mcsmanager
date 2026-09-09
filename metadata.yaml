@@ -1,4 +1,5 @@
-name: MCSManager服务器管理插件
+name: astrbot_plugin_mcsmanager
+display_name: MCSManager服务器管理插件
 author: 星见雅（HSOS6）
 desc: 可以通过指令管理mcsmanager内实例的插件:主要功能:通过指令开/关/重启mcsm实例，实例详情，批量操作，文件管理，面板用户管理，节点管理，支持LLM自然语言调用
 version: 2.0.26.08.WNMCNXM
