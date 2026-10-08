@@ -22,6 +22,38 @@
     "type": "int",
     "hint": "使用mcsm log指令时返回的日志条数，默认20条，建议100以内",
     "default": 20
+  },
+  "command_max_length": {
+    "description": "LLM命令最大长度",
+    "type": "int",
+    "hint": "默认256；超出长度的命令会被拒绝",
+    "default": 256
+  },
+  "command_result_wait": {
+    "description": "LLM命令结果等待秒数",
+    "type": "float",
+    "hint": "仅用于读取命令后的日志增量，默认1秒；无关联证据时不会宣称成功",
+    "default": 1
+  },
+  "allow_arbitrary_llm_commands": {
+    "description": "允许LLM执行非白名单命令（高风险）",
+    "type": "bool",
+    "hint": "默认关闭；开启前请确认授权范围",
+    "default": false
+  },
+  "llm_command_allowlist": {
+    "description": "LLM命令执行白名单",
+    "type": "list",
+    "hint": "每行填写一个命令根或完整命令；也可使用管理员指令 mcsm addcmdwhitelist 动态添加",
+    "default": [
+      "list",
+      "seed",
+      "time",
+      "locate",
+      "weather",
+      "difficulty",
+      "spark healthreport"
+    ]
   }
 }
 
