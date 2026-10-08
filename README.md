@@ -21,7 +21,6 @@ _✨ AstrBot 一个可以管理mcsm的小插件 ✨_
 - 面板用户管理（列表/创建/删除）
 - 节点重连、删除实例（危险操作，需二次确认）
 - 支持 LLM 工具调用：开启 AstrBot 的工具调用后，可直接用自然语言让 AI 帮你管理服务器喵
-- 新增公开 `mcsm_locate` 专用工具：传入实例、Minecraft 玩家名、注册表 ID和 locate 类型（`structure`/`biome`/`poi`），插件执行 `execute at <玩家名> run locate <类型> <结构ID>`；返回结构化状态和坐标，无法关联日志结果时会明确返回 timeout，不会伪造成功
 
 ## 📦 安装
 ### 方式一：从插件市场安装
@@ -43,14 +42,13 @@ git clone https://github.com/HSOS6/astrbot_plugin_mcsmanager.git
 ### 插件配置：
 <img width="1866" height="893" alt="image" src="https://github.com/user-attachments/assets/a79bdc26-c081-4994-9d62-5656d6493cce" />
 所有可选框均为必填配置！
-`llm_command_allowlist` 是 LLM 可执行命令白名单，默认预设为：`list`、`seed`、`time`、`locate`、`weather`、`difficulty`、`spark healthreport`。可直接在 AstrBot 插件配置面板中增加或删除条目；配置保存后立即作为 LLM 工具的判定依据。
+`llm_command_allowlist` 是 LLM 可执行命令白名单，默认预设为：`list`、`seed`、`time`、`locate`、`weather`、`difficulty`、`spark healthreport`。可直接在 AstrBot 插件配置面板中增加或删除条目。
 
 管理员也可以通过聊天指令动态维护白名单（修改后会持久化到插件配置）：
-- `/mcsm addcmdwhitelist [命令]` - 添加命令根或完整命令，例如 `/mcsm addcmdwhitelist spark healthreport`
+- `/mcsm addcmdwhitelist [命令]` - 添加命令根或完整命令，例如 `/mcsm addcmdwhitelist spark healthreport` 允许LLM自行调用 spark healthreport
 - `/mcsm delcmdwhitelist [命令]` - 移除一条命令
 - `/mcsm listcmdwhitelist` - 查看当前白名单
-
-白名单指令仅允许管理员调用。危险根命令（如 `stop`、`op`、`ban`、`reload` 等）仍会被硬编码安全策略拒绝；不要开启 `allow_arbitrary_llm_commands` 来替代精细白名单。
+白名单指令仅允许管理员调用。高危命令（如 `stop`、`op`、`ban`、`reload` 等）仍会被安全策略拒绝；建议不要开启 `allow_arbitrary_llm_commands` 来替代精细白名单。
 
 MCSManager 面板地址 (mcsm_url)需要填mcsmWeb地址（默认为23333）
 APIkey需要从
@@ -110,6 +108,7 @@ APIkey需要从
 - 添加 LLM 命令白名单 mcsm addcmdwhitelist [命令]（仅管理员）
 - 移除 LLM 命令白名单 mcsm delcmdwhitelist [命令]（仅管理员）
 - 查看 LLM 命令白名单 mcsm listcmdwhitelist（仅管理员）
+- 注：白名单为精确到具体命令则放行整个组，如白名单添加spark，则会放行整个 spark 命令组
 
 ### LLM 工具调用
 配置好 LLM 并启用函数调用后，AI 可以自动使用以下工具（无需指令，直接说人话即可）：
@@ -127,10 +126,15 @@ APIkey需要从
 ---
 
 ## 更新日志
-### v26.10.2：LLM 命令白名单配置化
-- 新增 AstrBot 配置项 `llm_command_allowlist`，默认迁移原有安全命令预设。
+### 26.10.2：LLM 命令白名单配置化
+- 新增 AstrBot 配置项 `llm_command_allowlist`，为LLM 可执行命令白名单。
 - 新增管理员指令 `mcsm addcmdwhitelist`、`mcsm delcmdwhitelist`、`mcsm listcmdwhitelist`，支持持久化维护白名单。
-- 保留危险命令硬拦截和 `allow_arbitrary_llm_commands` 高风险开关说明。
+- 原有 LLM 安全命令白名单迁移为配置项 `llm_command_allowlist`。
+- AstrBot 配置面板也可以直接增加、删除白名单条目。
+
+### 26.10.1：创建mcsm_locate工具，标准化的以玩家为中心的locate方法
+- 新增公开的 `mcsm_locate` LLM 工具：以指定玩家为中心locate（需要提供玩家名）
+- 支持 `structure`、`biome`、`poi` 三类定位。
 
 ### 26.08：功能大扩充喵！
 - 新增实例命令：restart（重启）/ kill（强制结束）/ info（实例详情，含在线人数）/ update（执行更新命令）
