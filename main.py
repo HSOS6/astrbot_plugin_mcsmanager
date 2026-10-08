@@ -430,30 +430,31 @@ class MCSMPlugin(Star):
         self.config["llm_command_allowlist"] = values
         self.context.save_config()
 
+    # 新加入的LLM调用指令白名单，用来手动精细化控制命令执行权限
     @filter.command("mcsm addcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_addcmdwhitelist(self, event: AstrMessageEvent):
         """Add one exact command/root to the LLM execution allowlist."""
         raw = event.message_str.strip()
         parts = raw.split(maxsplit=2)
         if len(parts) < 3 or not parts[2].strip():
-            yield event.plain_result("⚠️ 用法: /mcsm addcmdwhitelist [命令]，例如 /mcsm addcmdwhitelist spark healthreport")
+            yield event.plain_result("用法: /mcsm addcmdwhitelist [命令]，例如 /mcsm addcmdwhitelist spark")
             return
         candidate = parts[2].strip()
         allowed, reason = command_allowed(candidate, allowlist=[candidate], max_length=int(self.config.get("command_max_length", 256)))
         if not allowed:
-            yield event.plain_result(f"❌ 不能添加: {reason}")
+            yield event.plain_result(f"无法添加: {reason}")
             return
         values = self._configured_llm_allowlist()
         normalized = candidate.lstrip("/").lower()
         if any(item.lstrip("/").lower() == normalized for item in values):
-            yield event.plain_result(f"ℹ️ 命令已在白名单中: {candidate}")
+            yield event.plain_result(f"本命令已在白名单中: {candidate}")
             return
         values.append(candidate)
         try:
             await self._save_llm_allowlist(values)
-            yield event.plain_result(f"✅ 已添加 LLM 命令白名单: {candidate}")
+            yield event.plain_result(f"已添加 LLM 命令白名单: {candidate}")
         except Exception as exc:
-            yield event.plain_result(f"❌ 保存白名单失败: {exc}")
+            yield event.plain_result(f"保存白名单失败: {exc}")
 
     @filter.command("mcsm delcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_delcmdwhitelist(self, event: AstrMessageEvent):
@@ -461,25 +462,25 @@ class MCSMPlugin(Star):
         raw = event.message_str.strip()
         parts = raw.split(maxsplit=2)
         if len(parts) < 3 or not parts[2].strip():
-            yield event.plain_result("⚠️ 用法: /mcsm delcmdwhitelist [命令]")
+            yield event.plain_result("用法: /mcsm delcmdwhitelist [命令]")
             return
         candidate = parts[2].strip().lstrip("/").lower()
         values = self._configured_llm_allowlist()
         remaining = [item for item in values if item.lstrip("/").lower() != candidate]
         if len(remaining) == len(values):
-            yield event.plain_result(f"ℹ️ 命令不在白名单中: {parts[2].strip()}")
+            yield event.plain_result(f"本命令不在白名单中: {parts[2].strip()}")
             return
         try:
             await self._save_llm_allowlist(remaining)
-            yield event.plain_result(f"✅ 已移除 LLM 命令白名单: {parts[2].strip()}")
+            yield event.plain_result(f"已成功移除 LLM 命令白名单: {parts[2].strip()}")
         except Exception as exc:
-            yield event.plain_result(f"❌ 保存白名单失败: {exc}")
+            yield event.plain_result(f"保存白名单失败: {exc}")
 
     @filter.command("mcsm listcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_listcmdwhitelist(self, event: AstrMessageEvent):
         """List configured LLM command allowlist entries."""
         values = self._configured_llm_allowlist()
-        yield event.plain_result("📋 LLM 命令白名单:\n" + "\n".join(f"- {item}" for item in values))
+        yield event.plain_result("LLM 命令白名单:\n" + "\n".join(f"- {item}" for item in values))
 
     @filter.command("mcsm op", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_auth(self, event: AstrMessageEvent, user_id: str):
