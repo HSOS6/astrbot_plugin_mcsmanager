@@ -5,9 +5,26 @@ import httpx
 import json 
 import datetime 
 import re
+import importlib.util
+from pathlib import Path
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+
+# AstrBot 上传安装时可能不会把插件目录加入 sys.path；按 main.py 同目录加载 helper，
+# 同时兼容直接从源码目录运行和插件管理器按文件加载两种方式。
+_helper_path = Path(__file__).with_name("mcsm_helpers.py")
+_helper_spec = importlib.util.spec_from_file_location("astrbot_plugin_mcsmanager.mcsm_helpers", _helper_path)
+if _helper_spec is None or _helper_spec.loader is None:
+    raise ImportError(f"无法加载插件 helper: {_helper_path}")
+_mcsm_helpers = importlib.util.module_from_spec(_helper_spec)
+_helper_spec.loader.exec_module(_mcsm_helpers)
+build_locate_command = _mcsm_helpers.build_locate_command
+command_allowed = _mcsm_helpers.command_allowed
+log_delta = _mcsm_helpers.log_delta
+parse_locate_output = _mcsm_helpers.parse_locate_output
+result_json = _mcsm_helpers.result_json
+DEFAULT_LLM_COMMAND_ALLOWLIST = _mcsm_helpers.DEFAULT_LLM_COMMAND_ALLOWLIST
 
 class InstanceCooldownManager:
     """实例操作冷却时间管理"""
@@ -56,6 +73,11 @@ class MCSMPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
         self.config = config
+        # Keep the shipped safe commands as the default for existing installs;
+        # the config panel can extend/replace this list at runtime.
+        configured_allowlist = self.config.get("llm_command_allowlist")
+        if not isinstance(configured_allowlist, list):
+            self.config["llm_command_allowlist"] = list(DEFAULT_LLM_COMMAND_ALLOWLIST)
         self.cooldown_manager = InstanceCooldownManager()
         self.http_client = httpx.AsyncClient(timeout=30.0)
         # 缓存实例数据，用于名称/编号/UUID查找
@@ -391,8 +413,98 @@ class MCSMPlugin(Star):
 > 权限管理 (仅管理员)
 /mcsm op - 授权用户
 /mcsm deop - 取消用户授权
+/mcsm addcmdwhitelist [命令] - 添加 LLM 命令白名单（仅管理员）
+/mcsm delcmdwhitelist [命令] - 移除 LLM 命令白名单（仅管理员）
+/mcsm listcmdwhitelist - 查看 LLM 命令白名单（仅管理员）
 """
         yield event.plain_result(help_text)
+
+    def _configured_llm_allowlist(self) -> List[str]:
+        """Return a cleaned copy of the persisted LLM command allowlist."""
+        values = self.config.get("llm_command_allowlist", DEFAULT_LLM_COMMAND_ALLOWLIST)
+        if not isinstance(values, list):
+            values = list(DEFAULT_LLM_COMMAND_ALLOWLIST)
+        return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
+
+    async def _save_llm_allowlist(self, values: List[str]):
+        old_values = self.config.get("llm_command_allowlist")
+        self.config["llm_command_allowlist"] = values
+        try:
+            self.context.save_config()
+        except Exception:
+            if old_values is None:
+                self.config.pop("llm_command_allowlist", None)
+            else:
+                self.config["llm_command_allowlist"] = old_values
+            raise
+
+    def _can_use_locate(self, event: AstrMessageEvent) -> bool:
+        """Check the independently configurable locate permission level.
+
+        0: public, 1: admin or authorized user, 2: admin only.
+        """
+        level = self.config.get("locate_permission_level", 1)
+        try:
+            level = int(level)
+        except (TypeError, ValueError):
+            level = 1
+        if level <= 0:
+            return True
+        if level >= 2:
+            return event.is_admin()
+        return self.is_admin_or_authorized(event)
+
+    # 新加入的LLM调用指令白名单，用来手动精细化控制命令执行权限
+    @filter.command("mcsm addcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
+    async def mcsm_addcmdwhitelist(self, event: AstrMessageEvent):
+        """Add one exact command/root to the LLM execution allowlist."""
+        raw = event.message_str.strip()
+        parts = raw.split(maxsplit=2)
+        if len(parts) < 3 or not parts[2].strip():
+            yield event.plain_result("用法: /mcsm addcmdwhitelist [命令]，例如 /mcsm addcmdwhitelist spark")
+            return
+        candidate = parts[2].strip()
+        allowed, reason = command_allowed(candidate, allowlist=[candidate], max_length=int(self.config.get("command_max_length", 256)))
+        if not allowed:
+            yield event.plain_result(f"无法添加: {reason}")
+            return
+        values = self._configured_llm_allowlist()
+        normalized = candidate.lstrip("/").lower()
+        if any(item.lstrip("/").lower() == normalized for item in values):
+            yield event.plain_result(f"本命令已在白名单中: {candidate}")
+            return
+        values.append(candidate)
+        try:
+            await self._save_llm_allowlist(values)
+            yield event.plain_result(f"已添加 LLM 命令白名单: {candidate}")
+        except Exception as exc:
+            yield event.plain_result(f"保存白名单失败: {exc}")
+
+    @filter.command("mcsm delcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
+    async def mcsm_delcmdwhitelist(self, event: AstrMessageEvent):
+        """Remove one command from the LLM execution allowlist."""
+        raw = event.message_str.strip()
+        parts = raw.split(maxsplit=2)
+        if len(parts) < 3 or not parts[2].strip():
+            yield event.plain_result("用法: /mcsm delcmdwhitelist [命令]")
+            return
+        candidate = parts[2].strip().lstrip("/").lower()
+        values = self._configured_llm_allowlist()
+        remaining = [item for item in values if item.lstrip("/").lower() != candidate]
+        if len(remaining) == len(values):
+            yield event.plain_result(f"本命令不在白名单中: {parts[2].strip()}")
+            return
+        try:
+            await self._save_llm_allowlist(remaining)
+            yield event.plain_result(f"已成功移除 LLM 命令白名单: {parts[2].strip()}")
+        except Exception as exc:
+            yield event.plain_result(f"保存白名单失败: {exc}")
+
+    @filter.command("mcsm listcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
+    async def mcsm_listcmdwhitelist(self, event: AstrMessageEvent):
+        """List configured LLM command allowlist entries."""
+        values = self._configured_llm_allowlist()
+        yield event.plain_result("LLM 命令白名单:\n" + "\n".join(f"- {item}" for item in values))
 
     @filter.command("mcsm op", permission_type=filter.PermissionType.ADMIN)
     async def mcsm_auth(self, event: AstrMessageEvent, user_id: str):
@@ -1543,39 +1655,80 @@ class MCSMPlugin(Star):
             last = msg
         return last
 
-    @filter.llm_tool(name="mcsm_send_command")
-    async def tool_send_command(self, event: AstrMessageEvent, instance: str, command: str) -> str:
-        """向运行中的服务器实例控制台发送一条命令，并返回执行后的最新日志。
-        Args:
-            instance(string): 实例名称、编号或 UUID
-            command(string): 要发送到服务器控制台的命令，例如 "say hello" 或 "list"
-        """
-        if not self.is_admin_or_authorized(event):
-            return "权限不足"
+    async def _execute_console_command(self, instance: str, command: str, *, parse_locate: bool = False) -> dict:
+        """执行命令并以结构化状态返回；日志仅作为 best-effort 证据，不宣称严格因果关联。"""
+        allowed, reason = command_allowed(
+            command,
+            allow_arbitrary=bool(self.config.get("allow_arbitrary_llm_commands", False)),
+            max_length=int(self.config.get("command_max_length", 256)),
+            allowlist=self.config.get("llm_command_allowlist", DEFAULT_LLM_COMMAND_ALLOWLIST),
+        )
+        if not allowed:
+            return result_json("invalid", instance=instance, command=command, accepted=False, reason=reason)
         ids = await self._resolve_instance(instance)
         if not ids:
-            return f"找不到实例: {instance}。请先用 mcsm_list_instances 查看实例列表"
+            return result_json("failed", instance=instance, command=command, accepted=False, reason=f"找不到实例: {instance}")
         daemon_id, instance_id, instance_name = ids
-
+        before_resp = await self.make_mcsm_request(
+            "/protected_instance/outputlog", method="GET",
+            params={"uuid": instance_id, "daemonId": daemon_id}
+        )
+        before = before_resp.get("data", "") if before_resp.get("status") == 200 else ""
         cmd_resp = await self.make_mcsm_request(
             "/protected_instance/command", method="GET",
             params={"uuid": instance_id, "daemonId": daemon_id, "command": command}
         )
         if cmd_resp.get("status") != 200:
-            return f"命令发送失败: {self._err_text(cmd_resp)}"
-
-        # 稍等一下让服务器处理命令喵
-        await asyncio.sleep(1)
+            return result_json("failed", instance=instance_name, command=command, accepted=False, reason=self._err_text(cmd_resp))
+        await asyncio.sleep(float(self.config.get("command_result_wait", 1.0)))
         output_resp = await self.make_mcsm_request(
             "/protected_instance/outputlog", method="GET",
             params={"uuid": instance_id, "daemonId": daemon_id}
         )
-        output = ""
-        if output_resp.get("status") == 200 and isinstance(output_resp.get("data"), str):
-            output = output_resp.get("data") or ""
-        if len(output) > 800:
-            output = "..." + output[-800:]
-        return f"命令已发送。最近日志:\n{output or '(无)'}"
+        output = output_resp.get("data", "") if output_resp.get("status") == 200 else ""
+        delta = log_delta(before if isinstance(before, str) else "", output if isinstance(output, str) else "")
+        parsed = parse_locate_output(delta, command) if parse_locate else None
+        if parse_locate:
+            if parsed and parsed.get("found") is True:
+                status = "succeeded"
+            elif parsed and parsed.get("found") is False:
+                status = "failed"
+            else:
+                status = "timeout"
+        else:
+            status = "pending" if not delta else "accepted"
+        return result_json(status, instance=instance_name, command=command, accepted=True, evidence=bool(delta), output=delta, reason="best_effort_log_delta", parsed=parsed)
+
+    @filter.llm_tool(name="mcsm_locate")
+    async def tool_locate(self, event: AstrMessageEvent, instance: str, player: str, target: str, locate_type: str = "structure") -> str:
+        """公开查询 Minecraft 结构、生物群系或兴趣点位置，以指定玩家为中心执行 locate。
+        Args:
+            instance(string): 实例名称、编号或 UUID
+            player(string): Minecraft 玩家名，不是聊天平台用户 ID
+            target(string): Minecraft 注册表 ID，例如 minecraft:village 或 minecraft:stronghold
+            locate_type(string): structure、biome 或 poi，默认 structure
+        """
+        if not self._can_use_locate(event):
+            return json.dumps({"status": "unauthorized", "accepted": False}, ensure_ascii=False)
+        valid, command, reason = build_locate_command(target, locate_type, player)
+        if not valid:
+            return json.dumps(result_json("invalid", instance=instance, command="", accepted=False, reason=reason), ensure_ascii=False)
+        result = await self._execute_console_command(instance, command, parse_locate=True)
+        if result.get("parsed"):
+            result.update(result["parsed"])
+        return json.dumps(result, ensure_ascii=False)
+
+    @filter.llm_tool(name="mcsm_send_command")
+    async def tool_send_command(self, event: AstrMessageEvent, instance: str, command: str) -> str:
+        """向 Minecraft 控制台发送命令并返回 JSON 状态。优先使用 mcsm_locate；accepted 仅表示请求被 MCSManager 接受，不代表命令已成功。
+        Args:
+            instance(string): 实例名称、编号或 UUID
+            command(string): 要发送的 Minecraft 控制台命令；危险命令默认会被安全策略拒绝
+        """
+        if not self.is_admin_or_authorized(event):
+            return json.dumps({"status": "unauthorized", "accepted": False}, ensure_ascii=False)
+        result = await self._execute_console_command(instance, command)
+        return json.dumps(result, ensure_ascii=False)
 
     @filter.llm_tool(name="mcsm_get_log")
     async def tool_get_log(self, event: AstrMessageEvent, instance: str, lines: int = 20) -> str:

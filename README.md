@@ -97,12 +97,16 @@ APIkey需要从
 **权限管理（仅管理员）**
 - 授权用户 mcsm op
 - 取消用户授权 mcsm deop
+- 添加 LLM 命令白名单 mcsm addcmdwhitelist [命令]（仅管理员）
+- 移除 LLM 命令白名单 mcsm delcmdwhitelist [命令]（仅管理员）
+- 查看 LLM 命令白名单 mcsm listcmdwhitelist（仅管理员）
+- 注：白名单为精确到具体命令则放行整个组，如白名单添加spark，则会放行整个 spark 命令组
 
 ### LLM 工具调用
 配置好 LLM 并启用函数调用后，AI 可以自动使用以下工具（无需指令，直接说人话即可）：
 面板概览 / 实例列表 / 实例详情 / 启动 / 停止 / 重启 / 发送命令 / 获取日志 / 文件列表 / 读文件 / 写文件
 
-例如直接说："帮我看看生存服的在线人数" 或 "重启一下模组服" 
+例如直接说："帮我看看生存服的在线人数" 或 "重启一下模组服"
 
 ## 🔗 相关链接
 
@@ -113,8 +117,28 @@ APIkey需要从
 
 ---
 
-## 更新日志
-### 26.08：功能大扩充喵！
+# 更新日志
+## 26.10 更新日志
+### 新增 `mcsm_locate` LLM 工具
+- 使用 Minecraft 玩家名作为执行中心，故调用本指令需要明确玩家用户名；
+- 自动生成标准指令：
+  ```text
+  execute at <玩家名> run locate <类型> <namespace:id>
+  ```
+- 返回结构化执行状态、日志证据和坐标解析结果；
+- 支持基础的中英文坐标结果解析；
+- 无法确认结果时不会返回time out
+- `mcsm_locate` 拥有独立权限等级配置 `locate_permission_level`。
+### 重构 `mcsm_send_command`
+- 增加命令长度限制，拦截控制字符；
+- 任务返回结构化执行结果；
+- 区分命令已接受、执行成功、执行失败和超时等状态
+- `llm_command_allowlist` （LLM命令白名）支持 AstrBot 配置面板直接编辑。
+- 管理员可使用 `/mcsm addcmdwhitelist`、`/mcsm delcmdwhitelist`、`/mcsm listcmdwhitelist` 动态维护白名单。
+### 安全修复
+- 修复 `allow_arbitrary_llm_commands` 开启时绕过危险命令黑名单的问题；危险根命令遵循硬拦截。
+- 白名单持久化失败时恢复内存中的旧值，避免配置面板状态与实际保存状态不一致。
+## 26.08：功能大扩充喵！
 - 新增实例命令：restart（重启）/ kill（强制结束）/ info（实例详情，含在线人数）/ update（执行更新命令）
 - 新增批量操作：startall / stopall / restartall（仅管理员）
 - 新增文件管理命令组：ls / cat / write / mkdir / rm / cp / mv / zip / unzip
@@ -124,10 +148,10 @@ APIkey需要从
 - status 命令增强：负载均值、剩余内存、节点地址、面板登录记录
 - 新增 LLM 工具调用：11 个 mcsm_* 工具，支持自然语言管理服务器
 - 代码重构：实例缓存统一管理，实例操作命令支持自动刷新缓存
-### 12.18：修复cmd命令空格不识别问题，新增mcsm log命令
+## 12.18：修复cmd命令空格不识别问题，新增mcsm log命令
 - 问题介绍：如/mcsm cmd id text1 text2只发送text1
 - 新增命令：读取条数可以在插件配置自定义
-### 12.15：修复了大部分问题，更新了很多东西
+## 12.15：修复了大部分问题，更新了很多东西
 之前说想改又忘记了
 已修复的主要问题：
 1. 授权问题（？）
