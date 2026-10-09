@@ -41,6 +41,12 @@
     "hint": "默认关闭；开启前请确认授权范围",
     "default": false
   },
+  "locate_permission_level": {
+    "description": "locate 使用权限等级",
+    "type": "int",
+    "hint": "0=所有用户，1=管理员或授权用户，2=仅管理员；默认1",
+    "default": 1
+  },
   "llm_command_allowlist": {
     "description": "LLM命令执行白名单",
     "type": "list",
@@ -49,7 +55,6 @@
       "list",
       "seed",
       "time",
-      "locate",
       "weather",
       "difficulty",
       "spark healthreport"

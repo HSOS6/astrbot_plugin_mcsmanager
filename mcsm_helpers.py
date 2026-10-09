@@ -8,7 +8,7 @@ _RESOURCE_LOCATION = re.compile(r"^[a-z0-9_.-]+:[a-z0-9_./-]+$")
 # These are the shipped presets. The AstrBot config key
 # ``llm_command_allowlist`` can extend or replace them at runtime.
 DEFAULT_LLM_COMMAND_ALLOWLIST = [
-    "list", "seed", "time", "locate", "weather", "difficulty",
+    "list", "seed", "time", "weather", "difficulty",
     "spark healthreport",
 ]
 _SAFE_ROOT_COMMANDS = set(DEFAULT_LLM_COMMAND_ALLOWLIST[:-1])
@@ -46,16 +46,16 @@ def command_allowed(command: str, *, allow_arbitrary: bool = False, max_length: 
     command = (command or "").strip()
     if not command or len(command) > max_length or any(ord(ch) < 32 and ch not in "\t" for ch in command):
         return False, "命令为空、过长或包含控制字符"
+    normalized_command = command.lstrip("/").lower()
+    root = normalized_command.split(None, 1)[0]
+    if root in _BLOCKED_ROOT_COMMANDS:
+        return False, f"命令 {root} 默认禁止通过 LLM 工具执行"
     if allow_arbitrary:
         return True, ""
     configured = allowlist if allowlist is not None else DEFAULT_LLM_COMMAND_ALLOWLIST
     normalized_allowlist = {str(item).strip().lstrip("/").lower() for item in configured if str(item).strip()}
-    normalized_command = command.lstrip("/").lower()
-    root = normalized_command.split(None, 1)[0]
     safe_roots = {item for item in normalized_allowlist if " " not in item}
     safe_exact = {item for item in normalized_allowlist if " " in item}
-    if root in _BLOCKED_ROOT_COMMANDS:
-        return False, f"命令 {root} 默认禁止通过 LLM 工具执行"
     if root not in safe_roots and root != "execute" and normalized_command not in safe_exact:
         return False, f"命令 {root} 不在 LLM 安全命令白名单中"
     if root == "execute" and not re.match(r"^execute\s+at\s+[A-Za-z0-9_]{1,16}\s+run\s+locate\s+(?:structure|biome|poi)\s+[a-z0-9_.-]+:[a-z0-9_./-]+$", command, re.I):

@@ -427,8 +427,32 @@ class MCSMPlugin(Star):
         return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
 
     async def _save_llm_allowlist(self, values: List[str]):
+        old_values = self.config.get("llm_command_allowlist")
         self.config["llm_command_allowlist"] = values
-        self.context.save_config()
+        try:
+            self.context.save_config()
+        except Exception:
+            if old_values is None:
+                self.config.pop("llm_command_allowlist", None)
+            else:
+                self.config["llm_command_allowlist"] = old_values
+            raise
+
+    def _can_use_locate(self, event: AstrMessageEvent) -> bool:
+        """Check the independently configurable locate permission level.
+
+        0: public, 1: admin or authorized user, 2: admin only.
+        """
+        level = self.config.get("locate_permission_level", 1)
+        try:
+            level = int(level)
+        except (TypeError, ValueError):
+            level = 1
+        if level <= 0:
+            return True
+        if level >= 2:
+            return event.is_admin()
+        return self.is_admin_or_authorized(event)
 
     # 新加入的LLM调用指令白名单，用来手动精细化控制命令执行权限
     @filter.command("mcsm addcmdwhitelist", permission_type=filter.PermissionType.ADMIN)
@@ -1684,6 +1708,8 @@ class MCSMPlugin(Star):
             target(string): Minecraft 注册表 ID，例如 minecraft:village 或 minecraft:stronghold
             locate_type(string): structure、biome 或 poi，默认 structure
         """
+        if not self._can_use_locate(event):
+            return json.dumps({"status": "unauthorized", "accepted": False}, ensure_ascii=False)
         valid, command, reason = build_locate_command(target, locate_type, player)
         if not valid:
             return json.dumps(result_json("invalid", instance=instance, command="", accepted=False, reason=reason), ensure_ascii=False)
