@@ -21,7 +21,7 @@ _✨ AstrBot 一个可以管理mcsm的小插件 ✨_
 - 面板用户管理（列表/创建/删除）
 - 节点重连、删除实例（危险操作，需二次确认）
 - 支持 LLM 工具调用：开启 AstrBot 的工具调用后，可直接用自然语言让 AI 帮你管理服务器喵
-- 新增 `mcsm_locate` 专用工具：传入实例、Minecraft 玩家名、注册表 ID 和 locate 类型（`structure`/`biome`/`poi`），插件执行 `execute at <玩家名> run locate <类型> <结构ID>`；返回结构化状态和坐标，无法关联日志结果时会明确返回 timeout，不会伪造成功。工具权限由 `locate_permission_level` 独立控制`r`n
+
 ## 📦 安装
 ### 方式一：从插件市场安装
 此插件已登录astrbot插件市场
@@ -42,12 +42,6 @@ git clone https://github.com/HSOS6/astrbot_plugin_mcsmanager.git
 ### 插件配置：
 <img width="1866" height="893" alt="image" src="https://github.com/user-attachments/assets/a79bdc26-c081-4994-9d62-5656d6493cce" />
 所有可选框均为必填配置！
-`locate_permission_level` 是 `mcsm_locate` 的独立权限等级：`0`=所有用户，`1`=管理员或授权用户，`2`=仅管理员，默认值为 `1`。`r`n`r`n`llm_command_allowlist` 是 LLM 可执行命令白名单，默认预设为：`list`、`seed`、`time`、`weather`、`difficulty`、`spark healthreport`。可直接在 AstrBot 插件配置面板中增加或删除条目；直接的 `locate` 命令不在白名单中，请使用 `mcsm_locate`。`r`n`r`n
-管理员也可以通过聊天指令动态维护白名单（修改后会持久化到插件配置）：
-- `/mcsm addcmdwhitelist [命令]` - 添加命令根或完整命令，例如 `/mcsm addcmdwhitelist spark healthreport` 允许LLM自行调用 spark healthreport
-- `/mcsm delcmdwhitelist [命令]` - 移除一条命令
-- `/mcsm listcmdwhitelist` - 查看当前白名单
-白名单指令仅允许管理员调用。危险根命令（如 `stop`、`op`、`ban`、`reload` 等）无论是否开启 `allow_arbitrary_llm_commands`，仍会被硬编码安全策略拒绝；不要开启任意命令模式来替代精细白名单。`r`n
 MCSManager 面板地址 (mcsm_url)需要填mcsmWeb地址（默认为23333）
 APIkey需要从
 <img width="1867" height="895" alt="屏幕截图 2025-11-17 175417" src="https://github.com/user-attachments/assets/786c3495-efad-4938-8506-ddf3f23296fb" />
@@ -123,9 +117,17 @@ APIkey需要从
 
 ---
 
-## 更新日志
-### v26.10.3：LLM 指令安全修复与 locate 权限配置`r`n- 新增 `locate_permission_level` 配置：`0`=所有用户，`1`=管理员或授权用户，`2`=仅管理员，默认 `1`。`r`n- 修复 `mcsm_locate` 缺少权限校验的问题。`r`n- 修复任意命令模式绕过危险命令黑名单的问题。`r`n- 移除无效的默认 `locate` 白名单项，直接 locate 请使用 `mcsm_locate`。`r`n- 白名单保存失败时恢复内存中的旧配置，避免配置状态不一致。`r`n`r`n### v26.10.2：LLM 命令白名单配置化`r`n- 新增 AstrBot 配置项 `llm_command_allowlist`，默认迁移原有安全命令预设。`r`n- 新增管理员指令 `mcsm addcmdwhitelist`、`mcsm delcmdwhitelist`、`mcsm listcmdwhitelist`，支持持久化维护白名单。`r`n- 保留危险命令硬拦截和 `allow_arbitrary_llm_commands` 高风险开关说明。`r`n
-### 26.08：功能大扩充喵！
+# 更新日志
+## 26.10 更新日志
+### 安全修复
+- `mcsm_locate` 增加独立权限等级配置 `locate_permission_level`。
+- 修复 `allow_arbitrary_llm_commands` 开启时绕过危险命令黑名单的问题；危险根命令遵循硬拦截。
+- 移除默认白名单中的 `locate`，直接 locate 必须使用带玩家中心的 `mcsm_locate` 工具。
+- 白名单持久化失败时恢复内存中的旧值，避免配置面板状态与实际保存状态不一致。
+### 白名单配置
+- `llm_command_allowlist` （LLM命令白名）支持 AstrBot 配置面板直接编辑。
+- 管理员可使用 `/mcsm addcmdwhitelist`、`/mcsm delcmdwhitelist`、`/mcsm listcmdwhitelist` 动态维护白名单。
+## 26.08：功能大扩充喵！
 - 新增实例命令：restart（重启）/ kill（强制结束）/ info（实例详情，含在线人数）/ update（执行更新命令）
 - 新增批量操作：startall / stopall / restartall（仅管理员）
 - 新增文件管理命令组：ls / cat / write / mkdir / rm / cp / mv / zip / unzip
@@ -135,10 +137,10 @@ APIkey需要从
 - status 命令增强：负载均值、剩余内存、节点地址、面板登录记录
 - 新增 LLM 工具调用：11 个 mcsm_* 工具，支持自然语言管理服务器
 - 代码重构：实例缓存统一管理，实例操作命令支持自动刷新缓存
-### 12.18：修复cmd命令空格不识别问题，新增mcsm log命令
+## 12.18：修复cmd命令空格不识别问题，新增mcsm log命令
 - 问题介绍：如/mcsm cmd id text1 text2只发送text1
 - 新增命令：读取条数可以在插件配置自定义
-### 12.15：修复了大部分问题，更新了很多东西
+## 12.15：修复了大部分问题，更新了很多东西
 之前说想改又忘记了
 已修复的主要问题：
 1. 授权问题（？）
